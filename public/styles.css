@@ -1,0 +1,141 @@
+const state = {
+  stories: [],
+  posts: [],
+  chats: [],
+  communities: []
+};
+
+const feedEl = document.getElementById('feed');
+const storiesEl = document.getElementById('stories');
+const chatListEl = document.getElementById('chatList');
+const communityListEl = document.getElementById('communityList');
+const postInput = document.getElementById('postInput');
+const publishBtn = document.getElementById('publishPost');
+
+function renderStories(stories) {
+  storiesEl.innerHTML = stories
+    .map(
+      (story) => `
+        <article class="story-item" style="background: linear-gradient(160deg, ${story.color}, rgba(7,10,18,.7));">
+          <div class="avatar gradient-3">${story.author[0]}</div>
+          <strong>${story.author}</strong>
+          <small>${story.tag}</small>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function renderFeed(posts) {
+  feedEl.innerHTML = posts
+    .map(
+      (post) => `
+        <article class="post-card">
+          <div class="post-top">
+            <div class="post-author">
+              <div class="avatar gradient-2">${post.author[0]}</div>
+              <div>
+                <strong>${post.author}</strong><br />
+                <small>${post.handle} • ${post.time}</small>
+              </div>
+            </div>
+            <span class="post-badge">${post.badge}</span>
+          </div>
+
+          <div class="post-content">${post.content}</div>
+
+          <div class="post-metrics">
+            <span>❤️ ${post.likes}</span>
+            <span>💬 ${post.comments}</span>
+            <span>🔁 ${post.shares}</span>
+            <span>🏷 ${post.mood}</span>
+          </div>
+        </article>
+      `
+    )
+    .join('');
+}
+
+function renderChats(chats) {
+  chatListEl.innerHTML = chats
+    .map(
+      (chat) => `
+        <div class="chat-item">
+          <div class="chat-main">
+            <div class="avatar" style="background:${chat.accent}; width: 34px; height: 34px; font-size: 0.75rem;">${chat.name[0]}</div>
+            <div class="chat-copy">
+              <strong>${chat.name}</strong>
+              <small>${chat.preview}</small>
+            </div>
+          </div>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <small style="color: var(--muted);">${chat.status}</small>
+            ${chat.unread ? `<span class="unread">${chat.unread}</span>` : ''}
+          </div>
+        </div>
+      `
+    )
+    .join('');
+}
+
+function renderCommunities(communities) {
+  communityListEl.innerHTML = communities
+    .map(
+      (community) => `
+        <div class="community-item">
+          <div class="chat-main">
+            <div class="avatar" style="background: linear-gradient(135deg, #22c55e, #0ea5e9); width: 34px; height: 34px; font-size: 0.75rem;">${community.name[0]}</div>
+            <div class="community-copy">
+              <strong>${community.name}</strong>
+              <small>${community.topic}</small>
+            </div>
+          </div>
+          <span class="pill neutral">${community.members}</span>
+        </div>
+      `
+    )
+    .join('');
+}
+
+async function loadData() {
+  const [storiesRes, postsRes, chatsRes, communitiesRes] = await Promise.all([
+    fetch('/api/stories'),
+    fetch('/api/posts'),
+    fetch('/api/chats'),
+    fetch('/api/communities')
+  ]);
+
+  state.stories = await storiesRes.json();
+  state.posts = await postsRes.json();
+  state.chats = await chatsRes.json();
+  state.communities = await communitiesRes.json();
+
+  renderStories(state.stories);
+  renderFeed(state.posts);
+  renderChats(state.chats);
+  renderCommunities(state.communities);
+}
+
+publishBtn.addEventListener('click', async () => {
+  const content = postInput.value.trim();
+  if (!content) return;
+
+  const response = await fetch('/api/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      author: 'You',
+      handle: '@you',
+      mood: 'General',
+      content
+    })
+  });
+
+  if (response.ok) {
+    postInput.value = '';
+    await loadData();
+  }
+});
+
+loadData();
+
