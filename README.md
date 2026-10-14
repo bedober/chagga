@@ -1,31 +1,35 @@
-# chagga — Social all-in-one (scaffold)
+# Chagga Social
 
-Make friends — a starting scaffold that combines major social-media features and adds missing, privacy & wellbeing focused features.
+A polished social-media prototype inspired by modern social chat apps like uChat, but built to include the features giant platforms often miss: transparent feed controls, privacy-first defaults, community moderation, creator protections, wellbeing tools, accessibility, and portability.
 
-This repository branch contains a minimal runnable prototype and a design doc describing features to implement.
+## Features included
 
-Tech stack (scaffold):
-- Node.js + Express (backend API)
-- Static frontend (plain HTML/JS) for quick demo (replace with React/Next/Tailwind in next iteration)
-- In-memory data for demos (replace with PostgreSQL + Prisma or MongoDB in production)
+- Social feed with stories and trending cards
+- Direct messaging and chat rooms
+- Communities and topic channels
+- Profiles, earned badges, and creator wallet
+- Privacy controls and audience selection
+- Explainable feed ranking with signal toggles
+- Safety and moderation controls
+- Wellbeing dashboard and sleep-safe posting nudges
+- Accessibility helpers and multilingual support
+- Data export and account portability
 
-How to run (locally):
-- Clone the repo and checkout branch feat/social-scaffold
-- npm install
-- npm run dev
-- Open http://localhost:3000
+## Run locally
 
-What's included in this branch:
-- server.js — Express API with basic endpoints for posts and status
-- public/index.html + public/app.js — frontend that consumes the API and lists the unified features
-- docs/architecture.md — design doc with feature list (giant platform features + what they lack), architecture, schema suggestions and next steps
-- package.json, .gitignore
+```bash
+npm install
+npm run dev
+```
 
-Next steps I can take for you (pick any):
-- Replace frontend with React/Next.js + Tailwind and implement auth flows
-- Add real DB (Postgres) + Prisma schema and Docker compose
-- Implement E2E encryption for direct messages and ephemeral threads
-- Add feed ranking with explainable signals and user tuning controls
-- Wire up ActivityPub-compatible federation
+Then open http://localhost:3000
 
-If you want, I can open a PR from this branch to your default branch once you review.
+## Production roadmap
+
+- Replace mock data with PostgreSQL + Prisma
+- Add authentication via WebAuthn or OAuth
+- Add real-time WebSockets for live chat
+- Add encryption and message retention controls
+- Add federation / ActivityPub compatibility
+- Add moderation queues, appeals, and reporting analytics
+
