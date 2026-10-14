@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String    @id @default(cuid())
+  username    String    @unique
+  email       String?   @unique
+  password    String
+  displayName String?
+  bio         String?
+  createdAt   DateTime  @default(now())
+  posts       Post[]
+  messages    Message[]
+  followers   Follow[]  @relation("following")
+  following   Follow[]  @relation("follower")
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  author    User     @relation(fields: [authorId], references: [id])
+  authorId  String
+  content   String
+  createdAt DateTime @default(now())
+}
+
+model Follow {
+  id         String @id @default(cuid())
+  follower   User   @relation("follower", fields: [followerId], references: [id])
+  followerId String
+  following  User   @relation("following", fields: [followingId], references: [id])
+  followingId String
+  createdAt  DateTime @default(now())
+
+  @@unique([followerId, followingId])
+}
+
+model Community {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  topic     String?
+  about     String?
+  members   Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+model Message {
+  id         String   @id @default(cuid())
+  room       String
+  sender     User     @relation(fields: [senderId], references: [id])
+  senderId   String
+  content    String
+  createdAt  DateTime @default(now())
+}

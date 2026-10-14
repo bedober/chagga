@@ -1,50 +1,146 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Chagga — Make friends</title>
-  <style>
-    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:#f7fafc;color:#111}
-    header{background:#0ea5a4;color:white;padding:20px}
-    main{padding:20px}
-    .card{background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:16px}
-    button{background:#0ea5a4;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
-    ul{padding-left:20px}
-    .post{border-bottom:1px solid #eee;padding:8px 0}
-  </style>
-</head>
-<body>
-  <header>
-    <h1>Chagga — Make friends</h1>
-    <div>Unified social features + privacy, wellbeing, and federation</div>
-  </header>
-  <main>
-    <section class="card">
-      <h2>Quick demo</h2>
-      <p>Fetch available features and create quick posts (in-memory).</p>
-      <div>
-        <button id="loadFeatures">Load features</button>
-        <button id="loadPosts">Load posts</button>
-      </div>
-      <div style="margin-top:12px">
-        <input id="author" placeholder="author" />
-        <input id="content" placeholder="post content" style="width:60%" />
-        <button id="createPost">Post</button>
-      </div>
-      <div id="output" style="margin-top:12px"></div>
-    </section>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chagga — Social that respects humans</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-row">
+          <div class="brand-mark">C</div>
+          <div>
+            <div class="brand-name">Chagga</div>
+            <small>Make friends</small>
+          </div>
+        </div>
 
-    <section class="card">
-      <h2>Design & next steps</h2>
-      <p>See <code>docs/architecture.md</code> for the full feature list and implementation plan.</p>
-    </section>
+        <nav class="main-nav">
+          <button class="nav-item active"><span>🏠</span> Home</button>
+          <button class="nav-item"><span>🔍</span> Discover</button>
+          <button class="nav-item"><span>💬</span> Messages</button>
+          <button class="nav-item"><span>👥</span> Communities</button>
+          <button class="nav-item"><span>⭐</span> Creator Hub</button>
+          <button class="nav-item"><span>⚙️</span> Settings</button>
+        </nav>
 
-    <section class="card">
-      <h2>Posts</h2>
-      <div id="feed"></div>
-    </section>
-  </main>
-  <script src="/app.js"></script>
-</body>
+        <div class="profile-card" id="sideProfile">
+          <div class="avatar large gradient-1">Y</div>
+          <div>
+            <div class="user-name" id="sideName">Your profile</div>
+            <div class="user-tag" id="sideTag">@you</div>
+          </div>
+          <div class="mini-stats">
+            <div><strong id="sideFollowers">—</strong><span>followers</span></div>
+            <div><strong id="sidePosts">—</strong><span>posts</span></div>
+          </div>
+        </div>
+
+        <div style="padding:12px">
+          <div id="authArea">
+            <input id="usernameInput" placeholder="username" />
+            <input id="passwordInput" placeholder="password" type="password" />
+            <button id="loginBtn">Log in</button>
+            <button id="registerBtn">Register</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="content-area">
+        <header class="topbar">
+          <div>
+            <div class="eyebrow">For people, not ads</div>
+            <h1>Social without the betrayal loop</h1>
+          </div>
+          <div class="top-actions">
+            <button class="ghost-btn">Share</button>
+            <button class="primary-btn" id="composeToggle">Post</button>
+          </div>
+        </header>
+
+        <section class="story-strip" id="stories"></section>
+
+        <section class="composer card" id="composer">
+          <div class="composer-header">
+            <div class="avatar gradient-2">Y</div>
+            <div class="composer-meta">
+              <strong>Share something meaningful</strong>
+              <small>Audience: friends + close circles</small>
+            </div>
+          </div>
+          <textarea id="postInput" placeholder="What would you like to share today?"></textarea>
+          <div class="composer-footer">
+            <div class="composer-tools">
+              <span>📷 Photo</span>
+              <span>🎥 Video</span>
+              <span>📍 Place</span>
+            </div>
+            <button id="publishPost" class="primary-btn">Publish post</button>
+          </div>
+        </section>
+
+        <section class="feed-panel">
+          <div class="section-header">
+            <h2>For you</h2>
+            <div class="chips">
+              <span class="chip active">Trending</span>
+              <span class="chip">Following</span>
+              <span class="chip">Communities</span>
+            </div>
+          </div>
+          <div id="feed" class="feed"></div>
+        </section>
+      </main>
+
+      <aside class="right-rail">
+        <div class="card panel">
+          <div class="panel-header">
+            <h3>Messages</h3>
+            <span class="pill success">Live</span>
+          </div>
+          <div id="chatList" class="chat-list"></div>
+          <div style="padding-top:10px">
+            <input id="chatRoomInput" placeholder="Room name (e.g. general)" />
+            <button id="joinRoomBtn">Join room</button>
+          </div>
+          <div id="chatMessages" style="margin-top:12px; max-height:300px; overflow:auto; padding:8px; border-radius:8px; background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.03)"></div>
+          <div style="display:flex; gap:8px; margin-top:8px">
+            <input id="chatMessageInput" placeholder="Message" style="flex:1" />
+            <button id="sendChatBtn">Send</button>
+          </div>
+        </div>
+
+        <div class="card panel">
+          <div class="panel-header">
+            <h3>Communities</h3>
+            <span class="pill neutral">18</span>
+          </div>
+          <div id="communityList" class="community-list"></div>
+          <div style="padding-top:10px">
+            <input id="communityName" placeholder="New community name" />
+            <button id="createCommunityBtn">Create</button>
+          </div>
+        </div>
+
+        <div class="card panel insight-panel">
+          <h3>Missing from giant social media</h3>
+          <ul>
+            <li>Transparent ranking explanations</li>
+            <li>Granular, per-post privacy</li>
+            <li>Data export and portability</li>
+            <li>Wellbeing safeguards</li>
+            <li>Transparent moderation appeals</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
 </html>
