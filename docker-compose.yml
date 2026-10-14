@@ -1,0 +1,38 @@
+version: '3.8'
+services:
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: chagga
+      POSTGRES_PASSWORD: changeme
+      POSTGRES_DB: chagga
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - '5432:5432'
+
+  redis:
+    image: redis:7
+    restart: always
+    ports:
+      - '6379:6379'
+
+  app:
+    build: .
+    command: npm run dev
+    volumes:
+      - ./:/usr/src/app
+    ports:
+      - '3000:3000'
+    environment:
+      - DATABASE_URL
+      - JWT_ACCESS_SECRET
+      - JWT_REFRESH_SECRET
+      - REDIS_URL
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  db-data:

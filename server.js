@@ -10,6 +10,10 @@ const { Server } = require('socket.io');
 const multer = require('multer');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
+const cookieParser = require('cookie-parser');
+const rateLimit = require('express-rate-limit');
+const { Queue } = require('bullmq');
+const IORedis = require('ioredis');
 
 require('dotenv').config();
 
@@ -18,30 +22,18 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
 
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
+app.use(cookieParser());
 app.use(bodyParser.json({ limit: '2mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
+const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET || process.env.JWT_SECRET || 'dev_access_secret';
+const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret';
+const REDIS_URL = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
 
-function signToken(user) {
-  return jwt.sign({ id: user.id, username: user.username }, JWT_SECRET, { expiresIn: '7d' });
-}
-
-async function authFromHeader(req, res, next) {
-  const auth = req.headers.authorization;
-  if (!auth) return res.status(401).json({ error: 'Missing Authorization header' });
-  const token = auth.replace('Bearer ', '');
-  try {
-    const payload = jwt.verify(token, JWT_SECRET);
-    const user = await prisma.user.findUnique({ where: { id: payload.id } });
-    if (!user) return res.status(401).json({ error: 'Invalid token' });
-    req.user = user;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-}
+// rate limiter
+const limiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 200 });
+app.use(limiter);
 
 // File upload storage (local prototype)
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
@@ -55,18 +47,39 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
 
+// BullMQ queue for notifications
+const connection = new IORedis(REDIS_URL);
+const notifQueue = new Queue('notifications', { connection });
+
 // In-memory map of userId -> socket ids
 const userSockets = new Map();
 
-// Helper: create notification
-async function createNotification(userId, type, data) {
-  const notif = await prisma.notification.create({ data: { userId, type, data } });
-  const sockets = userSockets.get(userId) || [];
-  sockets.forEach(sid => {
-    const socket = io.sockets.sockets.get(sid);
-    if (socket) socket.emit('notification', notif);
-  });
-  return notif;
+// Helper: enqueue notification job (worker will persist and emit)
+async function enqueueNotification(userId, type, data) {
+  await notifQueue.add('send', { userId, type, data });
+}
+
+function signAccessToken(user) {
+  return jwt.sign({ id: user.id, username: user.username }, JWT_ACCESS_SECRET, { expiresIn: '15m' });
+}
+
+function signRefreshToken(user) {
+  return jwt.sign({ id: user.id, username: user.username }, JWT_REFRESH_SECRET, { expiresIn: '30d' });
+}
+
+async function authFromHeader(req, res, next) {
+  const auth = req.headers.authorization;
+  if (!auth) return res.status(401).json({ error: 'Missing Authorization header' });
+  const token = auth.replace('Bearer ', '');
+  try {
+    const payload = jwt.verify(token, JWT_ACCESS_SECRET);
+    const user = await prisma.user.findUnique({ where: { id: payload.id } });
+    if (!user) return res.status(401).json({ error: 'Invalid token' });
+    req.user = user;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 }
 
 // Auth
@@ -80,8 +93,14 @@ app.post('/api/auth/register', async (req, res) => {
 
     const hashed = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({ data: { username, email, password: hashed, displayName } });
-    const token = signToken(user);
-    res.status(201).json({ token, user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl, isCreator: user.isCreator, isModerator: user.isModerator } });
+
+    const accessToken = signAccessToken(user);
+    const refreshToken = signRefreshToken(user);
+    // store refresh token
+    await prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
+
+    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 30 * 24 * 60 * 60 * 1000 });
+    res.status(201).json({ accessToken, user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'server error' });
@@ -97,20 +116,52 @@ app.post('/api/auth/login', async (req, res) => {
     if (!user) return res.status(400).json({ error: 'invalid credentials' });
     const ok = await bcrypt.compare(password, user.password);
     if (!ok) return res.status(400).json({ error: 'invalid credentials' });
-    const token = signToken(user);
-    res.json({ token, user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl, isCreator: user.isCreator, isModerator: user.isModerator } });
+
+    const accessToken = signAccessToken(user);
+    const refreshToken = signRefreshToken(user);
+    await prisma.refreshToken.create({ data: { token: refreshToken, userId: user.id, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
+    res.cookie('refreshToken', refreshToken, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 30 * 24 * 60 * 60 * 1000 });
+    res.json({ accessToken, user: { id: user.id, username: user.username, displayName: user.displayName, avatarUrl: user.avatarUrl } });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'server error' });
   }
 });
 
-app.get('/api/auth/me', authFromHeader, async (req, res) => {
-  const u = req.user;
-  // include follower/post counts and wallet
-  const followers = await prisma.follow.count({ where: { followingId: u.id } });
-  const posts = await prisma.post.count({ where: { authorId: u.id } });
-  res.json({ id: u.id, username: u.username, displayName: u.displayName, bio: u.bio, avatarUrl: u.avatarUrl, isCreator: u.isCreator, isModerator: u.isModerator, walletBalance: u.walletBalance, followers, posts });
+app.post('/api/auth/refresh', async (req, res) => {
+  const token = req.cookies.refreshToken;
+  if (!token) return res.status(401).json({ error: 'no refresh token' });
+  try {
+    const payload = jwt.verify(token, JWT_REFRESH_SECRET);
+    // check DB
+    const stored = await prisma.refreshToken.findUnique({ where: { token } });
+    if (!stored) return res.status(401).json({ error: 'invalid refresh token' });
+    if (new Date(stored.expiresAt) < new Date()) {
+      await prisma.refreshToken.delete({ where: { token } });
+      return res.status(401).json({ error: 'refresh expired' });
+    }
+    const user = await prisma.user.findUnique({ where: { id: payload.id } });
+    if (!user) return res.status(401).json({ error: 'invalid token' });
+    // rotate refresh token
+    await prisma.refreshToken.delete({ where: { token } });
+    const newRefresh = signRefreshToken(user);
+    await prisma.refreshToken.create({ data: { token: newRefresh, userId: user.id, expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) } });
+    res.cookie('refreshToken', newRefresh, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', maxAge: 30 * 24 * 60 * 60 * 1000 });
+    const accessToken = signAccessToken(user);
+    res.json({ accessToken });
+  } catch (err) {
+    console.error('refresh err', err.message);
+    return res.status(401).json({ error: 'invalid refresh token' });
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  const token = req.cookies.refreshToken;
+  if (token) {
+    try { await prisma.refreshToken.delete({ where: { token } }); } catch (e) {}
+  }
+  res.clearCookie('refreshToken');
+  res.json({ ok: true });
 });
 
 // Profile editing
@@ -149,22 +200,6 @@ app.get('/api/users/:username', async (req, res) => {
   res.json({ ...user, followers, following });
 });
 
-app.get('/api/users/:username/followers', async (req, res) => {
-  const username = req.params.username;
-  const user = await prisma.user.findUnique({ where: { username } });
-  if (!user) return res.status(404).json({ error: 'not found' });
-  const list = await prisma.follow.findMany({ where: { followingId: user.id }, include: { follower: { select: { id: true, username: true, displayName: true, avatarUrl: true } } }, orderBy: { createdAt: 'desc' }, take: 100 });
-  res.json(list.map(l => l.follower));
-});
-
-app.get('/api/users/:username/following', async (req, res) => {
-  const username = req.params.username;
-  const user = await prisma.user.findUnique({ where: { username } });
-  if (!user) return res.status(404).json({ error: 'not found' });
-  const list = await prisma.follow.findMany({ where: { followerId: user.id }, include: { following: { select: { id: true, username: true, displayName: true, avatarUrl: true } } }, orderBy: { createdAt: 'desc' }, take: 100 });
-  res.json(list.map(l => l.following));
-});
-
 app.post('/api/follow/:username', authFromHeader, async (req, res) => {
   const target = req.params.username;
   const me = req.user;
@@ -174,8 +209,8 @@ app.post('/api/follow/:username', authFromHeader, async (req, res) => {
 
   try {
     const created = await prisma.follow.create({ data: { followerId: me.id, followingId: other.id } });
-    // notify
-    await createNotification(other.id, 'follow', { from: { id: me.id, username: me.username } });
+    // enqueue notification
+    await enqueueNotification(other.id, 'follow', { from: { id: me.id, username: me.username } });
     res.json({ ok: true });
   } catch (err) {
     // duplicate -> unfollow
@@ -202,39 +237,24 @@ app.post('/api/posts', authFromHeader, async (req, res) => {
   const { content, tags } = req.body;
   if (!content) return res.status(400).json({ error: 'content required' });
   const post = await prisma.post.create({ data: { content, tags: tags || [], authorId: req.user.id } });
-  // notify followers (simple fan-out for demo: fetch followers and create notifications)
+  // enqueue notifications to followers
   const followers = await prisma.follow.findMany({ where: { followingId: req.user.id } });
   for (const f of followers) {
-    await createNotification(f.followerId, 'new_post', { postId: post.id, author: { id: req.user.id, username: req.user.username } });
+    await enqueueNotification(f.followerId, 'new_post', { postId: post.id, author: { id: req.user.id, username: req.user.username } });
   }
   res.status(201).json(post);
 });
 
-// Communities: unchanged
-app.get('/api/communities', async (req, res) => {
-  const comms = await prisma.community.findMany({ orderBy: { members: 'desc' } });
-  res.json(comms);
+// Notifications endpoints
+app.get('/api/notifications', authFromHeader, async (req, res) => {
+  const notifs = await prisma.notification.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 200 });
+  res.json(notifs);
 });
 
-app.post('/api/communities', authFromHeader, async (req, res) => {
-  const { name, topic, about } = req.body;
-  if (!name) return res.status(400).json({ error: 'name required' });
-  try {
-    const c = await prisma.community.create({ data: { name, topic, about } });
-    res.status(201).json(c);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'server error' });
-  }
-});
-
-// Creator dashboard
-app.get('/api/creator/me', authFromHeader, async (req, res) => {
-  const me = req.user;
-  if (!me.isCreator) return res.status(403).json({ error: 'not a creator' });
-  const posts = await prisma.post.count({ where: { authorId: me.id } });
-  const followers = await prisma.follow.count({ where: { followingId: me.id } });
-  res.json({ posts, followers, walletBalance: me.walletBalance });
+app.post('/api/notifications/:id/read', authFromHeader, async (req, res) => {
+  const id = req.params.id;
+  await prisma.notification.update({ where: { id }, data: { read: true } });
+  res.json({ ok: true });
 });
 
 // Moderation reporting
@@ -242,9 +262,9 @@ app.post('/api/report', authFromHeader, async (req, res) => {
   const { contentRef, reason } = req.body;
   if (!contentRef) return res.status(400).json({ error: 'contentRef required' });
   const mc = await prisma.moderationCase.create({ data: { reporterId: req.user.id, contentRef, reason } });
-  // notify moderators (for demo: find moderators and notify)
+  // notify moderators (enqueue)
   const mods = await prisma.user.findMany({ where: { isModerator: true } });
-  for (const m of mods) await createNotification(m.id, 'moderation_report', { caseId: mc.id, contentRef });
+  for (const m of mods) await enqueueNotification(m.id, 'moderation_report', { caseId: mc.id, contentRef });
   res.status(201).json(mc);
 });
 
@@ -262,24 +282,12 @@ app.post('/api/moderation/:id/action', authFromHeader, async (req, res) => {
   res.json(mc);
 });
 
-// Notifications
-app.get('/api/notifications', authFromHeader, async (req, res) => {
-  const notifs = await prisma.notification.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 200 });
-  res.json(notifs);
-});
-
-app.post('/api/notifications/:id/read', authFromHeader, async (req, res) => {
-  const id = req.params.id;
-  await prisma.notification.update({ where: { id }, data: { read: true } });
-  res.json({ ok: true });
-});
-
 // Socket.io auth
 io.use(async (socket, next) => {
   try {
     const token = socket.handshake.auth && socket.handshake.auth.token;
     if (!token) return next(new Error('Authentication error'));
-    const payload = jwt.verify(token, JWT_SECRET);
+    const payload = jwt.verify(token, JWT_ACCESS_SECRET);
     const user = await prisma.user.findUnique({ where: { id: payload.id } });
     if (!user) return next(new Error('Authentication error'));
     socket.user = user;

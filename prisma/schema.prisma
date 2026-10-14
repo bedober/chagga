@@ -24,6 +24,7 @@ model User {
   followers    Follow[]  @relation("following")
   following    Follow[]  @relation("follower")
   notifications Notification[]
+  refreshTokens RefreshToken[]
 }
 
 model Post {
@@ -93,4 +94,13 @@ model ModerationCase {
   decision     String?
   createdAt    DateTime @default(now())
   resolvedAt   DateTime?
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  createdAt DateTime @default(now())
+  expiresAt DateTime
 }
