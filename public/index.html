@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Chagga — Make friends</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial;margin:0;padding:0;background:#f7fafc;color:#111}
+    header{background:#0ea5a4;color:white;padding:20px}
+    main{padding:20px}
+    .card{background:white;padding:16px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.08);margin-bottom:16px}
+    button{background:#0ea5a4;color:white;border:none;padding:8px 12px;border-radius:6px;cursor:pointer}
+    ul{padding-left:20px}
+    .post{border-bottom:1px solid #eee;padding:8px 0}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Chagga — Make friends</h1>
+    <div>Unified social features + privacy, wellbeing, and federation</div>
+  </header>
+  <main>
+    <section class="card">
+      <h2>Quick demo</h2>
+      <p>Fetch available features and create quick posts (in-memory).</p>
+      <div>
+        <button id="loadFeatures">Load features</button>
+        <button id="loadPosts">Load posts</button>
+      </div>
+      <div style="margin-top:12px">
+        <input id="author" placeholder="author" />
+        <input id="content" placeholder="post content" style="width:60%" />
+        <button id="createPost">Post</button>
+      </div>
+      <div id="output" style="margin-top:12px"></div>
+    </section>
+
+    <section class="card">
+      <h2>Design & next steps</h2>
+      <p>See <code>docs/architecture.md</code> for the full feature list and implementation plan.</p>
+    </section>
+
+    <section class="card">
+      <h2>Posts</h2>
+      <div id="feed"></div>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
