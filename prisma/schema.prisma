@@ -8,17 +8,22 @@ datasource db {
 }
 
 model User {
-  id          String    @id @default(cuid())
-  username    String    @unique
-  email       String?   @unique
-  password    String
-  displayName String?
-  bio         String?
-  createdAt   DateTime  @default(now())
-  posts       Post[]
-  messages    Message[]
-  followers   Follow[]  @relation("following")
-  following   Follow[]  @relation("follower")
+  id           String    @id @default(cuid())
+  username     String    @unique
+  email        String?   @unique
+  password     String
+  displayName  String?
+  bio          String?
+  avatarUrl    String?
+  isCreator    Boolean   @default(false)
+  isModerator  Boolean   @default(false)
+  walletBalance Float    @default(0)
+  createdAt    DateTime  @default(now())
+  posts        Post[]
+  messages     Message[]
+  followers    Follow[]  @relation("following")
+  following    Follow[]  @relation("follower")
+  notifications Notification[]
 }
 
 model Post {
@@ -26,16 +31,17 @@ model Post {
   author    User     @relation(fields: [authorId], references: [id])
   authorId  String
   content   String
+  tags      String[] @default([])
   createdAt DateTime @default(now())
 }
 
 model Follow {
-  id         String @id @default(cuid())
-  follower   User   @relation("follower", fields: [followerId], references: [id])
-  followerId String
-  following  User   @relation("following", fields: [followingId], references: [id])
+  id          String  @id @default(cuid())
+  follower    User    @relation("follower", fields: [followerId], references: [id])
+  followerId  String
+  following   User    @relation("following", fields: [followingId], references: [id])
   followingId String
-  createdAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   @@unique([followerId, followingId])
 }
@@ -49,11 +55,42 @@ model Community {
   createdAt DateTime @default(now())
 }
 
+model Room {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  isPrivate Boolean  @default(false)
+  createdAt DateTime @default(now())
+  messages  Message[]
+}
+
 model Message {
   id         String   @id @default(cuid())
-  room       String
+  room       Room     @relation(fields: [roomId], references: [id])
+  roomId     String
   sender     User     @relation(fields: [senderId], references: [id])
   senderId   String
   content    String
   createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  type      String
+  data      Json?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model ModerationCase {
+  id           String   @id @default(cuid())
+  reporterId   String
+  reporter     User     @relation(fields: [reporterId], references: [id])
+  contentRef   String
+  reason       String?
+  status       String   @default("open")
+  decision     String?
+  createdAt    DateTime @default(now())
+  resolvedAt   DateTime?
 }
